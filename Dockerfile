@@ -12,8 +12,8 @@ RUN apk add --no-cache \
   cairo-dev \
   pango-dev \
   jpeg-dev \
-  giflib-dev \
-  node-gyp
+  giflib-dev
+
 
 # --- Dependencies install ---
 FROM base AS deps
