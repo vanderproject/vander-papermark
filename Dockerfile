@@ -4,7 +4,7 @@ WORKDIR /app
 
 # --- Install deps ---
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat python3 make g++ # for node-gyp compatibility
 COPY . .
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 RUN pnpm install --no-frozen-lockfile
@@ -14,6 +14,10 @@ RUN pnpm prisma generate
 FROM base AS build
 COPY --from=deps /app /app
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Patch invalid route config if needed
+RUN sed -i '/type":"host"/d' next.config.js || true
+
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 RUN pnpm run build
 
@@ -24,7 +28,6 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Optionally re-enable pnpm for runtime (useful for start command)
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 
 COPY --from=build /app/.next .next
