@@ -1,30 +1,38 @@
-# --- Base ---
-FROM node:18-alpine
+# Base image (Debian-based for better native support)
+FROM node:18-slim
 
+# Set working directory
 WORKDIR /app
 
-# System deps for native modules
-RUN apk add --no-cache libc6-compat python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev pixman-dev
+# Install system dependencies for native modules
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    libcairo2-dev \
+    libjpeg-dev \
+    libpango1.0-dev \
+    libgif-dev \
+    librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy code
+# Copy all code
 COPY . .
 
-# Enable pnpm
+# Enable and install pnpm
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
-
-# Install deps
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm prisma generate
 
-# 🔥 Minimal patch: Remove the invalid `has` block (no attempt to fix)
+# Cleanly patch invalid "has" route in next.config.mjs
 RUN sed -i '/"has": \[{ *type: *"host" *}\],*/d' next.config.mjs || true
 
-# Build the app
+# Disable telemetry and build
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm run build
 
-# Expose port for Cloud Run
+# Expose port for GCP Cloud Run
 EXPOSE 8080
 
-# Start the server
+# Start the app
 CMD ["pnpm", "start"]
