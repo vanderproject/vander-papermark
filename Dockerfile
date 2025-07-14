@@ -2,7 +2,7 @@
 FROM node:18-alpine AS base
 WORKDIR /app
 
-# Install build dependencies for native modules
+# Native build deps (for canvas etc.)
 RUN apk add --no-cache \
   libc6-compat \
   python3 \
@@ -27,17 +27,14 @@ COPY --from=deps /app /app
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# ✅ FIX: Patch next.config.mjs AFTER code is copied
+# ✅ Patch next.config.mjs to remove invalid `has` route entry
 RUN if [ -f next.config.mjs ]; then \
-  node -e "const fs=require('fs'); \
-    let c=fs.readFileSync('next.config.mjs','utf8'); \
-    c=c.replace(/\\{\\s*type:\\s*['\\\"]host['\\\"]\\s*\\}/g,'{ type: \\\"host\\\", value: \\\".*\\\" }'); \
-    fs.writeFileSync('next.config.mjs', c);" \
-; fi
+  sed -i '/"has": \[\s*{ *type: *"host" *} *\]/d' next.config.mjs; \
+  fi
 
 RUN pnpm run build
 
-# --- Production stage ---
+# --- Runtime image ---
 FROM node:18-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -51,7 +48,6 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/prisma ./prisma
 
-# Re-enable pnpm
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 
 EXPOSE 8080
