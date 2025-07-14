@@ -1,57 +1,240 @@
-# --- Base image with necessary packages ---
-FROM node:18-alpine AS base
-WORKDIR /app
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  pageExtensions: ["js", "jsx", "ts", "tsx", "mdx"],
+  images: {
+    minimumCacheTTL: 2592000, // 30 days
+    remotePatterns: prepareRemotePatterns(),
+  },
+  transpilePackages: ["react-syntax-highlighter"],
+  skipTrailingSlashRedirect: true,
+  assetPrefix:
+    process.env.NODE_ENV === "production" &&
+    process.env.VERCEL_ENV === "production"
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : undefined,
+  async redirects() {
+    return [
+      {
+        source: "/",
+        destination: "/dashboard",
+        permanent: false,
+        has: [
+          {
+            type: "host",
+            value: process.env.NEXT_PUBLIC_APP_BASE_HOST,
+          },
+        ],
+      },
+      {
+        source: "/view/cm2xiaxzo000d147xszm9q72o",
+        destination: "/view/cm34cqqqx000212oekj9upn8o",
+        permanent: false,
+      },
+      {
+        source: "/view/cm5morpmg000btdwrlahi7f2y",
+        destination: "/view/cm68iygxd0005wuf5svbr6c1x",
+        permanent: false,
+      },
+      {
+        source: "/settings",
+        destination: "/settings/general",
+        permanent: false,
+      },
+    ];
+  },
+  async headers() {
+    const isDev = process.env.NODE_ENV === "development";
 
-# Install common build deps and native module support (e.g. for canvas)
-RUN apk add --no-cache \
-  libc6-compat \
-  python3 \
-  make \
-  g++ \
-  pixman-dev \
-  cairo-dev \
-  pango-dev \
-  jpeg-dev \
-  giflib-dev \
-  node-gyp
+    return [
+      {
+        // Default headers for all routes
+        source: "/:path*",
+        headers: [
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer-when-downgrade",
+          },
+          {
+            key: "X-DNS-Prefetch-Control",
+            value: "on",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "SAMEORIGIN",
+          },
+          {
+            key: "Report-To",
+            value: JSON.stringify({
+              group: "csp-endpoint",
+              max_age: 10886400,
+              endpoints: [{ url: "/api/csp-report" }],
+            }),
+          },
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value:
+              `default-src 'self' https: ${isDev ? "http:" : ""}; ` +
+              `script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${isDev ? "http:" : ""}; ` +
+              `style-src 'self' 'unsafe-inline' https: ${isDev ? "http:" : ""}; ` +
+              `img-src 'self' data: blob: https: ${isDev ? "http:" : ""}; ` +
+              `font-src 'self' data: https: ${isDev ? "http:" : ""}; ` +
+              `frame-ancestors 'none'; ` +
+              `connect-src 'self' https: ${isDev ? "http: ws: wss:" : ""}; ` + // Add WebSocket for hot reload
+              `${isDev ? "" : "upgrade-insecure-requests;"} ` +
+              "report-to csp-endpoint;",
+          },
+        ],
+      },
+      {
+        source: "/view/:path*",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex",
+          },
+        ],
+      },
+      {
+        // Embed routes - allow iframe embedding
+        source: "/view/:path*/embed",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              `default-src 'self' https: ${isDev ? "http:" : ""}; ` +
+              `script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${isDev ? "http:" : ""}; ` +
+              `style-src 'self' 'unsafe-inline' https: ${isDev ? "http:" : ""}; ` +
+              `img-src 'self' data: blob: https: ${isDev ? "http:" : ""}; ` +
+              `font-src 'self' data: https: ${isDev ? "http:" : ""}; ` +
+              "frame-ancestors *; " + // This allows iframe embedding
+              `connect-src 'self' https: ${isDev ? "http: ws: wss:" : ""}; ` + // Add WebSocket for hot reload
+              `${isDev ? "" : "upgrade-insecure-requests;"}`,
+          },
+          {
+            key: "X-Robots-Tag",
+            value: "noindex",
+          },
+        ],
+      },
+      {
+        source: "/services/:path*",
+        has: [
+          {
+            type: "host",
+            value: process.env.NEXT_PUBLIC_WEBHOOK_BASE_HOST,
+          },
+        ],
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex",
+          },
+        ],
+      },
+      {
+        source: "/api/webhooks/services/:path*",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex",
+          },
+        ],
+      },
+      {
+        source: "/unsubscribe",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex",
+          },
+        ],
+      },
+    ];
+  },
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/mupdf/*": ["./node_modules/mupdf/dist/*.wasm"],
+    },
+    missingSuspenseWithCSRBailout: false,
+  },
+};
 
-# --- Dependencies install ---
-FROM base AS deps
-COPY . .
-RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
-RUN pnpm install --no-frozen-lockfile
-RUN pnpm prisma generate
+function prepareRemotePatterns() {
+  let patterns = [
+    // static images and videos
+    { protocol: "https", hostname: "assets.papermark.io" },
+    { protocol: "https", hostname: "cdn.papermarkassets.com" },
+    { protocol: "https", hostname: "d2kgph70pw5d9n.cloudfront.net" },
+    // twitter img
+    { protocol: "https", hostname: "pbs.twimg.com" },
+    // linkedin img
+    { protocol: "https", hostname: "media.licdn.com" },
+    // google img
+    { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    // papermark img
+    { protocol: "https", hostname: "www.papermark.io" },
+    { protocol: "https", hostname: "app.papermark.io" },
+    { protocol: "https", hostname: "www.papermark.com" },
+    { protocol: "https", hostname: "app.papermark.com" },
+    // useragent img
+    { protocol: "https", hostname: "faisalman.github.io" },
+    // special document pages
+    { protocol: "https", hostname: "d36r2enbzam0iu.cloudfront.net" },
+    // us special storage
+    { protocol: "https", hostname: "d35vw2hoyyl88.cloudfront.net" },
+  ];
 
-# --- Patch invalid 'has' object in next.config.mjs ---
-RUN if [ -f next.config.mjs ]; then \
-  sed -i 's/{ *type: *"host" *}/{ type: "host", value: ".*" }/g' next.config.mjs; \
-  fi
+  // Default region patterns
+  if (process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST) {
+    patterns.push({
+      protocol: "https",
+      hostname: process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST,
+    });
+  }
 
-# --- Build the application ---
-FROM base AS build
-COPY --from=deps /app /app
-RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm run build
+  if (process.env.NEXT_PRIVATE_ADVANCED_UPLOAD_DISTRIBUTION_HOST) {
+    patterns.push({
+      protocol: "https",
+      hostname: process.env.NEXT_PRIVATE_ADVANCED_UPLOAD_DISTRIBUTION_HOST,
+    });
+  }
 
-# --- Final production image ---
-FROM node:18-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+  // US region patterns
+  if (process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST_US) {
+    patterns.push({
+      protocol: "https",
+      hostname: process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST_US,
+    });
+  }
 
-# Minimal runtime deps
-RUN apk add --no-cache libc6-compat
+  if (process.env.NEXT_PRIVATE_ADVANCED_UPLOAD_DISTRIBUTION_HOST_US) {
+    patterns.push({
+      protocol: "https",
+      hostname: process.env.NEXT_PRIVATE_ADVANCED_UPLOAD_DISTRIBUTION_HOST_US,
+    });
+  }
 
-# Copy only necessary artifacts for runtime
-COPY --from=build /app/.next .next
-COPY --from=build /app/public ./public
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/prisma ./prisma
+  if (process.env.VERCEL_ENV === "production") {
+    patterns.push({
+      // production vercel blob
+      protocol: "https",
+      hostname: "yoywvlh29jppecbh.public.blob.vercel-storage.com",
+    });
+  }
 
-# Ensure pnpm is available at runtime if needed
-RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
+  if (
+    process.env.VERCEL_ENV === "preview" ||
+    process.env.NODE_ENV === "development"
+  ) {
+    patterns.push({
+      // staging vercel blob
+      protocol: "https",
+      hostname: "36so9a8uzykxknsu.public.blob.vercel-storage.com",
+    });
+  }
 
-EXPOSE 8080
-CMD ["pnpm", "start"]
+  return patterns;
+}
+
+export default nextConfig;
