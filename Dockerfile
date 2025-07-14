@@ -14,6 +14,7 @@ RUN pnpm prisma generate
 FROM base AS build
 COPY --from=deps /app /app
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 RUN pnpm run build
 
 # --- Production image ---
@@ -22,6 +23,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Optionally re-enable pnpm for runtime (useful for start command)
+RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
 
 COPY --from=build /app/.next .next
 COPY --from=build /app/public ./public
