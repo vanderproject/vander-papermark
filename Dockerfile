@@ -7,7 +7,8 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 COPY . .
 RUN corepack enable && corepack prepare pnpm@8.6.6 --activate
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
+RUN pnpm prisma generate
 
 # --- Build the app ---
 FROM base AS build
